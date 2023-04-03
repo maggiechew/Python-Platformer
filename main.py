@@ -51,6 +51,7 @@ def get_block(size):
     surface.blit(image, (0, 0), rect)
     return pygame.transform.scale2x(surface)
 
+
 class Player(pygame.sprite.Sprite):
     COLOR = (255, 0, 0)
     GRAVITY = 1
@@ -67,6 +68,8 @@ class Player(pygame.sprite.Sprite):
         self.animation_count = 0
         self.fall_count = 0
         self.jump_count = 0
+        self.hit = False
+        self.hit_count = 0
 
     def jump(self):
         self.y_vel = -self.GRAVITY * 8
@@ -74,6 +77,9 @@ class Player(pygame.sprite.Sprite):
         self.jump_count += 1
         if self.jump_count == 1:
             self.fall_count = 0
+
+    def make_hit(self):
+        self.hit = True
 
     def move(self, dx, dy):
         self.rect.x += dx
@@ -98,6 +104,12 @@ class Player(pygame.sprite.Sprite):
         self.fall_count += 1
         self.update_sprite()
 
+        if self.hit:
+            self.hit_count +=1
+        if self.hit_count > fps *2:
+            self.hit = False
+            self.hit_count = 0
+
     def hit_head(self):
         self.count = 0
         self.y_vel *= -1
@@ -109,7 +121,9 @@ class Player(pygame.sprite.Sprite):
 
     def update_sprite(self):
         sprite_sheet = "idle"
-        if self.y_vel < 0:
+        if self.hit:
+            sprite_sheet= "hit"
+        elif self.y_vel < 0:
             if self.jump_count == 1:
                 sprite_sheet = "jump"
             elif self.jump_count == 2:
@@ -132,7 +146,7 @@ class Player(pygame.sprite.Sprite):
         self.mask = pygame.mask.from_surface(self.sprite)
 
     def draw(self, window, offset_x):
-        window.blit(self.sprite, (self.rect.x- offset_x, self.rect.y))
+        window.blit(self.sprite, (self.rect.x - offset_x, self.rect.y))
 
 
 class Object(pygame.sprite.Sprite):
@@ -146,6 +160,37 @@ class Object(pygame.sprite.Sprite):
 
     def draw(self, window, offset_x):
         window.blit(self.image, (self.rect.x - offset_x, self.rect.y))
+
+
+class Fire(Object):
+    ANIMATION_DELAY = 3
+
+    def __init__(self, x, y, width, height):
+        super().__init__(x, y, width, height, "fire")
+        self.fire = load_sprite_sheets("Traps", "Fire", width, height)
+        self.image = self.fire["off"][0]
+        self.mask = pygame.mask.from_surface(self.image)
+        self.animation_count = 0
+        self.animation_name = "off"
+
+    def on(self):
+        self.animation_name = "on"
+
+    def off(self):
+        self.animation_name = "off"
+
+    def loop(self):
+        sprites = self.fire[self.animation_name]
+        sprite_index = (self.animation_count //
+                        self.ANIMATION_DELAY) % len(sprites)
+        self.image = sprites[sprite_index]
+        self.animation_count +=1
+
+        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
+        self.mask = pygame.mask.from_surface(self.image)
+
+        if self.animation_count // self.ANIMATION_DELAY > len(sprites):
+            self.animation_count = 0
 
 
 class Block(Object):
@@ -166,9 +211,6 @@ def get_background(name):
             pos = (i * width, j * height)
             tiles.append(pos)
     return tiles, image
-
-        # draw(window, background, bg_image, player, floor, objects)
-
 
 def draw(window, background, bg_image, player, objects, offset_x):
     for tile in background:
@@ -221,18 +263,24 @@ def handle_move(player, objects):
     if keys[pygame.K_RIGHT] and not collide_right or keys[pygame.K_d] and not collide_right:
         player.move_right(PLAYER_VEL)
     vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
-    # to_check = [collide_left, collide_right, *vertical_collide]
+    to_check = [collide_left, collide_right, *vertical_collide]
+
+    for object in to_check:
+        if object and object.name == "fire":
+            player.make_hit() 
 
 
 def main(window):
     clock = pygame.time.Clock()
     background, bg_image = get_background("Pink.png")
     block_size = 96
+    fire=Fire(100, HEIGHT- block_size - 64, 16, 32)
+    fire.on()
     player = Player(100, 100, 50, 50)
     floor = [Block(i * block_size, HEIGHT - block_size, block_size)
              for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
     objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size),
-               Block(block_size * 3, HEIGHT - block_size * 4, block_size)]
+               Block(block_size * 3, HEIGHT - block_size * 4, block_size), fire]
 
     offset_x = 0
     scroll_area_width = 200
@@ -250,6 +298,8 @@ def main(window):
                 if event.key == pygame.K_SPACE and player.jump_count < 2:
                     player.jump()
         player.loop(FPS)
+        fire.loop()
+
         handle_move(player, objects)
         draw(window, background, bg_image, player, objects, offset_x)
 

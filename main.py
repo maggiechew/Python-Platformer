@@ -87,11 +87,20 @@ class Player(pygame.sprite.Sprite):
             self.animation_count = 0
 
     def loop(self, fps):
-        # self.y_vel += min(1, (self.fall_count / fps) * self.GRAVITY)
+        self.y_vel += min(1, (self.fall_count / fps) * self.GRAVITY)
         self.move(self.x_vel, self.y_vel)
 
         self.fall_count += 1
         self.update_sprite()
+
+    def hit_head(self):
+        self.count = 0
+        self.y_vel *= -1
+
+    def landed(self):
+        self.fall_count = 0
+        self.y_vel = 0
+        self.jump_count = 0
 
     def update_sprite(self):
         sprite_sheet = "idle"
@@ -152,18 +161,52 @@ def draw(window, background, bg_image, player, objects):
 
     for object in objects:
         object.draw(window)
-    player.draw(window)
+    player.draw(window) 
     pygame.display.update()
 
 
-def handle_move(player):
+def handle_vertical_collision(player, objects, dy):
+    collided_objects = []
+    for object in objects:
+        if pygame.sprite.collide_mask(player, object):
+            if dy > 0:
+                player.rect.bottom = object.rect.top
+                player.landed()
+            elif dy < 0:
+                player.rect.top = object.rect.bottom
+                player.hit_head()
+            collided_objects.append(object)
+    return collided_objects
+
+
+def collide(player, objects, dx):
+    player.move(dx, 0)
+    player.update()
+    collided_object = None
+    for object in objects:
+        if pygame.sprite.collide_mask(player, object):
+            collided_object = object
+            break
+
+    player.move(-dx, 0)
+    player.update()
+    return collided_object
+
+
+def handle_move(player, objects):
     # Player only moves when key pressed
     player.x_vel = 0
     keys = pygame.key.get_pressed()
-    if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+
+    collide_left = collide(player, objects, -PLAYER_VEL * 2)
+    collide_right = collide(player, objects, PLAYER_VEL * 2)
+
+    if keys[pygame.K_LEFT] or keys[pygame.K_a] and not collide_left:
         player.move_left(PLAYER_VEL)
-    if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+    if keys[pygame.K_RIGHT] or keys[pygame.K_d] and not collide_right:
         player.move_right(PLAYER_VEL)
+    vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
+    to_check = [collide_left, collide_right, *vertical_collide]
 
 
 def main(window):
@@ -171,9 +214,13 @@ def main(window):
     background, bg_image = get_background("Pink.png")
     block_size = 96
     player = Player(100, 100, 50, 50)
-    floor = [Block(i* block_size, HEIGHT - block_size, block_size) 
-             for i in range(-WIDTH // block_size, (WIDTH *2) // block_size)]
-    
+    floor = [Block(i * block_size, HEIGHT - block_size, block_size)
+             for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
+    objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size),
+               Block(block_size * 3, HEIGHT - block_size * 4, block_size)]
+
+
+
     run = True
     while run:
         clock.tick(FPS)
@@ -183,7 +230,7 @@ def main(window):
                 run = False
                 break
         player.loop(FPS)
-        handle_move(player)
+        handle_move(player, objects)
         draw(window, background, bg_image, player, floor)
 
     pygame.quit()
